@@ -1,0 +1,71 @@
+services:
+  nanoclaw:
+    image: cr.guneet.xyz/nanoclaw/orchestrator:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Map local /app paths to host paths for Docker bind-mount arguments.
+      # Agent containers run on the host Docker daemon (via socket mount),
+      # so their -v paths must resolve on the host, not inside this container.
+      HOST_PROJECT_DIR: ${PWD}
+      # OneCLI is reachable via compose network from the orchestrator.
+      ONECLI_URL: http://onecli-app:10254
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./store:/app/store
+      - ./groups:/app/groups
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/root/.config/nanoclaw
+    depends_on:
+      onecli-app:
+        condition: service_healthy
+    networks:
+      - nanoclaw
+
+  onecli-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: onecli
+      POSTGRES_PASSWORD: onecli
+      POSTGRES_DB: onecli
+    volumes:
+      - ./onecli-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U onecli']
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
+    networks:
+      - nanoclaw
+
+  onecli-app:
+    image: ghcr.io/onecli/onecli:latest
+    restart: unless-stopped
+    depends_on:
+      onecli-postgres:
+        condition: service_healthy
+    ports:
+      # Exposed to host so agent containers (running on host Docker) can reach
+      # the credential proxy at host.docker.internal:10255
+      - '10254:10254'
+      - '10255:10255'
+    environment:
+      DATABASE_URL: postgresql://onecli:onecli@onecli-postgres:5432/onecli
+    volumes:
+      - ./onecli-data:/app/data
+    healthcheck:
+      test: ['CMD', 'curl', '-sf', 'http://localhost:10254/api/health']
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 5
+    networks:
+      - nanoclaw
+
+networks:
+  nanoclaw:
+    driver: bridge

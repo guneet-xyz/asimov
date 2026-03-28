@@ -26,6 +26,29 @@ export const SCHEDULER_POLL_INTERVAL = 60000;
 const PROJECT_ROOT = process.cwd();
 const HOME_DIR = process.env.HOME || os.homedir();
 
+// HOST_PROJECT_DIR: When NanoClaw runs inside a Docker container, the paths it
+// sees (e.g. /app/groups/...) don't exist on the host Docker daemon. This env
+// var tells NanoClaw what prefix the host uses for the same data, so bind-mount
+// arguments passed to `docker run` resolve correctly on the host.
+// When unset (bare-metal mode), all paths are used as-is.
+export const HOST_PROJECT_DIR = process.env.HOST_PROJECT_DIR || '';
+
+/**
+ * Translate a local filesystem path to the corresponding host path for Docker
+ * bind-mount arguments. When HOST_PROJECT_DIR is unset (bare-metal), returns
+ * the path unchanged.
+ *
+ * Example: local /app/groups/main -> host /opt/nanoclaw/groups/main
+ *          (PROJECT_ROOT=/app, HOST_PROJECT_DIR=/opt/nanoclaw)
+ */
+export function resolveHostPath(localPath: string): string {
+  if (!HOST_PROJECT_DIR) return localPath;
+  const relative = path.relative(PROJECT_ROOT, localPath);
+  // Safety: don't translate paths outside the project root
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return localPath;
+  return path.join(HOST_PROJECT_DIR, relative);
+}
+
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
 export const MOUNT_ALLOWLIST_PATH = path.join(
   HOME_DIR,

@@ -17,6 +17,7 @@ import {
   IDLE_TIMEOUT,
   ONECLI_URL,
   TIMEZONE,
+  resolveHostPath,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
@@ -272,10 +273,14 @@ async function buildContainerArgs(
   }
 
   for (const mount of mounts) {
+    // Translate local paths to host paths for Docker bind-mount arguments.
+    // When running inside a container (HOST_PROJECT_DIR set), the Docker daemon
+    // sees host paths, not container-local paths.
+    const hostPath = resolveHostPath(mount.hostPath);
     if (mount.readonly) {
-      args.push(...readonlyMountArgs(mount.hostPath, mount.containerPath));
+      args.push(...readonlyMountArgs(hostPath, mount.containerPath));
     } else {
-      args.push('-v', `${mount.hostPath}:${mount.containerPath}`);
+      args.push('-v', `${hostPath}:${mount.containerPath}`);
     }
   }
 
